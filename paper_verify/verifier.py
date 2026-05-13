@@ -3,11 +3,24 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+from dataclasses import dataclass, field
+
 from .extractors.method_parser import diff_fingerprints, parse_method_description
 from .models import Claim, ClaimType, SourceAnchor, Status
 from .resolvers.code_resolver import build_code_fingerprint
 from .resolvers.config_resolver import resolve_hyperparam
 from .resolvers.log_resolver import resolve_numeric_or_count
+
+
+@dataclass
+class VerifyWarning:
+    claim_id: str
+    message: str
+
+
+@dataclass
+class VerifyContext:
+    warnings: list[VerifyWarning] = field(default_factory=list)
 
 
 def _numbers_match(paper: float, code: float, rel_tol: float = 1e-2) -> bool:
@@ -42,9 +55,21 @@ def verify_claim(
     log_root: Path,
     code_fp_cache: tuple | None = None,
     rel_tol: float = 1e-2,
+    ctx: VerifyContext | None = None,
 ) -> Claim:
+    def _log_conflict(cl, primary, others):
+        if ctx is None:
+            return
+        primary_val, primary_anchor = primary
+        msg = (
+            f"multiple log files contain '{cl.label}' with different values; "
+            f"used {primary_val} from {primary_anchor.render()} "
+            f"(others: {', '.join(f'{v} at {a.render()}' for v, a in others)})"
+        )
+        ctx.warnings.append(VerifyWarning(claim_id=cl.id, message=msg))
+
     if claim.type in (ClaimType.NUMERIC, ClaimType.COUNT):
-        result = resolve_numeric_or_count(claim, log_root)
+        result = resolve_numeric_or_count(claim, log_root, on_conflict=_log_conflict)
         if result is None:
             claim.status = Status.UNVERIFIABLE
             claim.detail = (
@@ -137,8 +162,10 @@ def verify_all(
     code_root: Path,
     log_root: Path,
     rel_tol: float = 1e-2,
+    ctx: VerifyContext | None = None,
 ) -> list[Claim]:
     code_fp_cache = build_code_fingerprint(code_root)
     for c in claims:
-        verify_claim(c, code_root, log_root, code_fp_cache=code_fp_cache, rel_tol=rel_tol)
+        verify_claim(c, code_root, log_root,
+                     code_fp_cache=code_fp_cache, rel_tol=rel_tol, ctx=ctx)
     return claims

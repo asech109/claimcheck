@@ -8,6 +8,21 @@ from ..models import Claim, ClaimType, SourceAnchor
 # Strip common LaTeX comment lines and inline comments (unescaped %).
 _INLINE_COMMENT_RE = re.compile(r"(?<!\\)%.*$")
 
+# LaTeX commands whose argument contents are references / labels / citations
+# and must NOT be searched for numbers. e.g. \cite{2024,127} is a citation,
+# not a claim of 127 transitions.
+_REFERENCE_CMDS = (
+    "cite", "citep", "citet", "citeauthor", "citeyear", "nocite",
+    "ref", "autoref", "eqref", "pageref", "nameref", "cref", "Cref",
+    "label", "bibitem", "url", "href",
+)
+_REFERENCE_CMD_RE = re.compile(
+    r"\\(?:" + "|".join(_REFERENCE_CMDS) + r")\*?(?:\[[^\]]*\])?\{[^}]*\}"
+)
+
+# \input{file} or \include{file} with optional .tex extension.
+_INCLUDE_RE = re.compile(r"\\(?:input|include|subfile)\{([^}]+)\}")
+
 # Numeric literals with optional %, scientific, LaTeX-style \times 10^{-4}, etc.
 # Captures the bare number form; LaTeX wrappers are normalized in _normalize_number.
 _NUM_TOKEN = r"(?:\d+(?:\.\d+)?(?:\s*\\times\s*10\^\{?-?\d+\}?)?(?:[eE]-?\d+)?\s*\\?%?)"
@@ -80,8 +95,10 @@ def _normalize_number(raw: str) -> float | int:
     s = s.replace("\\%", "").replace("%", "")
     m = re.match(r"^(-?\d+(?:\.\d+)?)\\times10\^\{?(-?\d+)\}?$", s)
     if m:
-        mantissa, exp = float(m.group(1)), int(m.group(2))
-        return mantissa * (10 ** exp)
+        # Compose into scientific notation as a string and let float() do
+        # the conversion — avoids the 3 * 10**-4 → 0.00030000000000000003
+        # artifact that chained float arithmetic would otherwise introduce.
+        return float(f"{m.group(1)}e{m.group(2)}")
     try:
         if re.match(r"^-?\d+$", s):
             return int(s)
@@ -101,6 +118,25 @@ def _strip_math_markers(text: str) -> str:
     """Replace single '$' math delimiters with spaces so number/unit regexes
     aren't blocked. Preserves line offsets (same-char replacement)."""
     return text.replace("$", " ")
+
+
+def _strip_reference_cmds(text: str) -> str:
+    """Replace contents of \\cite{}, \\ref{}, \\label{}, etc. with spaces.
+    Numbers inside citation keys must not become claims."""
+    def _blank(m: re.Match[str]) -> str:
+        return " " * len(m.group(0))
+    return _REFERENCE_CMD_RE.sub(_blank, text)
+
+
+def _resolve_include_path(base_dir: Path, raw: str) -> Path | None:
+    raw = raw.strip()
+    candidates = [base_dir / raw]
+    if not raw.endswith(".tex"):
+        candidates.append(base_dir / f"{raw}.tex")
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
 
 
 def _build_line_index(text: str) -> list[int]:
@@ -244,7 +280,7 @@ def extract_claims(tex_path: Path) -> list[Claim]:
     Claims missing an anchor are never produced.
     """
     raw_text = Path(tex_path).read_text(encoding="utf-8", errors="replace")
-    text = _strip_math_markers(_strip_comments(raw_text))
+    text = _strip_reference_cmds(_strip_math_markers(_strip_comments(raw_text)))
     line_offsets = _build_line_index(text)
 
     claims: list[Claim] = []
@@ -260,3 +296,27 @@ def extract_claims(tex_path: Path) -> list[Claim]:
         if key not in deduped:
             deduped[key] = c
     return list(deduped.values())
+
+
+def extract_claims_recursive(tex_path: Path, _seen: set[Path] | None = None) -> list[Claim]:
+    """Like extract_claims but follows \\input{} and \\include{} relative to
+    the parent file. Cycles are short-circuited via the _seen set so a
+    misconfigured paper cannot loop forever.
+
+    Each returned claim's tex_anchor points at the *real* file that contains
+    the text — anchors stay actionable in multi-file manuscripts."""
+    tex_path = tex_path.resolve()
+    if _seen is None:
+        _seen = set()
+    if tex_path in _seen or not tex_path.exists():
+        return []
+    _seen.add(tex_path)
+
+    claims: list[Claim] = list(extract_claims(tex_path))
+    raw = tex_path.read_text(encoding="utf-8", errors="replace")
+    base_dir = tex_path.parent
+    for m in _INCLUDE_RE.finditer(_strip_comments(raw)):
+        child_path = _resolve_include_path(base_dir, m.group(1))
+        if child_path is not None:
+            claims.extend(extract_claims_recursive(child_path, _seen=_seen))
+    return claims

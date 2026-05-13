@@ -40,6 +40,7 @@ def render_report(
     claims: list[Claim],
     base: Path | None = None,
     diff_blocks: list[str] | None = None,
+    warnings: list | None = None,
 ) -> str:
     """Markdown report with a summary line, the three-column table, and a
     details section for mismatches / drift / unverifiable claims."""
@@ -86,6 +87,13 @@ def render_report(
                 snippet = c.context_snippet[:240].replace("`", "ˋ")
                 lines.append(f"- **Context**: `{snippet}`")
             lines.append("")
+
+    if warnings:
+        lines.append("## Warnings")
+        lines.append("")
+        for w in warnings:
+            lines.append(f"- **`{w.claim_id}`** — {w.message}")
+        lines.append("")
 
     if diff_blocks:
         lines.append("## Proposed fixes")

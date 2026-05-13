@@ -5,11 +5,11 @@ import sys
 from pathlib import Path
 
 from .diff_proposer import propose_all
-from .extractors.tex_extractor import extract_claims
+from .extractors.tex_extractor import extract_claims, extract_claims_recursive
 from .hook import install_hook, prime_lock, run_hook
 from .models import Status
 from .reporter import render_report
-from .verifier import verify_all
+from .verifier import VerifyContext, verify_all
 from .waivers import add_waiver, load_waivers
 
 
@@ -21,11 +21,13 @@ def cmd_scan(args: argparse.Namespace) -> int:
         print(f"error: {tex_path} not found", file=sys.stderr)
         return 2
 
-    claims = extract_claims(tex_path)
+    extractor = extract_claims_recursive if args.follow_includes else extract_claims
+    claims = extractor(tex_path)
     if not claims:
         print(f"warning: no claims extracted from {tex_path}", file=sys.stderr)
 
-    verify_all(claims, code_root=code_root, log_root=log_root)
+    ctx = VerifyContext()
+    verify_all(claims, code_root=code_root, log_root=log_root, rel_tol=args.rel_tol, ctx=ctx)
 
     # Apply active waivers if a repo root is implied.
     if args.repo:
@@ -36,10 +38,12 @@ def cmd_scan(args: argparse.Namespace) -> int:
                 c.detail = "waived in claims_waived.yaml"
 
     diffs = propose_all(claims, base=Path.cwd())
-    report = render_report(claims, base=Path.cwd(), diff_blocks=diffs)
+    report = render_report(claims, base=Path.cwd(), diff_blocks=diffs, warnings=ctx.warnings)
     out = Path(args.report).resolve()
     out.write_text(report, encoding="utf-8")
     print(f"report written: {out}")
+    if ctx.warnings:
+        print(f"  (with {len(ctx.warnings)} warning(s) — see report)")
 
     mismatches = sum(
         1 for c in claims if c.status in (Status.MISMATCH, Status.METHOD_DRIFT)
@@ -86,6 +90,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--logs", default=".", help="Root of logs (json/jsonl/csv) to search")
     s.add_argument("--report", default="paper-verify-report.md", help="Output markdown path")
     s.add_argument("--repo", default=None, help="Repo root for waiver lookup (optional)")
+    s.add_argument("--rel-tol", type=float, default=1e-2,
+                   help="Relative tolerance for numeric claims (default 0.01 = 1%%). "
+                        "Counts always require exact equality regardless of this flag.")
+    s.add_argument("--follow-includes", action="store_true", default=True,
+                   help="Recursively follow \\input{} / \\include{} (default: on)")
+    s.add_argument("--no-follow-includes", dest="follow_includes", action="store_false",
+                   help="Disable include-following; scan only the top-level .tex")
     s.set_defaults(func=cmd_scan)
 
     w = sub.add_parser("waive", help="Add an active waiver for a specific claim id.")
