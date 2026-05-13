@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.tox/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Local runtime artifacts produced by paper-verify itself
+paper-verify-report.md
+.paper-verify/

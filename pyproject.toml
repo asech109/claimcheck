@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claimcheck"
+version = "0.1.0"
+description = "Paper-code consistency verifier for LaTeX manuscripts with strict file:line grounding."
+license = { text = "MIT" }
+readme = "README.md"
+keywords = ["latex", "reproducibility", "verification", "research-tools", "pre-commit"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Quality Assurance",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+]
+
+[project.scripts]
+claimcheck = "paper_verify.cli:main"
+# Legacy alias — will be removed in a future release.
+paper-verify = "paper_verify.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["paper_verify*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

@@ -1,0 +1,7 @@
+model: mlp
+optimizer:
+  name: adamw
+  learning_rate: 1.0e-4   # NOTE: paper says 3e-4 — intentional mismatch
+  weight_decay: 0.01
+batch_size: 64
+epochs: 50
