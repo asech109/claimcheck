@@ -2,7 +2,7 @@ from pathlib import Path
 
 from paper_verify.extractors.tex_extractor import extract_claims
 from paper_verify.models import ClaimType, Status
-from paper_verify.verifier import verify_all
+from paper_verify.verifier import _counts_match, _numbers_match, verify_all
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -26,6 +26,21 @@ def test_end_to_end_statuses():
     # method section mentions PPO + GAE; code has PPO only -> drift
     method_statuses = [c.status for c in claims if c.type == ClaimType.METHOD]
     assert Status.METHOD_DRIFT in method_statuses
+
+
+def test_counts_must_be_exact():
+    # 127 vs 128 must NOT match even though 1% tolerance is permissive.
+    assert _counts_match(127, 127)
+    assert not _counts_match(127, 128)
+    # Fractional paper values are not counts and must not match.
+    assert not _counts_match(127.5, 127)
+
+
+def test_numeric_tolerance_does_not_swallow_hyperparams():
+    # 3e-4 vs 1e-4 differ by 200% relative — must not match.
+    assert not _numbers_match(3e-4, 1e-4)
+    # Percent vs fraction reconciliation still works for accuracy-like values.
+    assert _numbers_match(87.3, 0.873)
 
 
 def test_truth_anchors_present_for_matches():

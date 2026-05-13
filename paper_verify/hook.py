@@ -174,3 +174,30 @@ def install_hook(repo_root: Path) -> Path:
     mode = os.stat(hook_path).st_mode
     os.chmod(hook_path, mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return hook_path
+
+
+def prime_lock(repo_root: Path, code_root: Path, log_root: Path) -> tuple[int, int]:
+    """Scan every .tex in repo_root and pre-populate the lock with matches.
+
+    Use after install_hook on a paper where the current state is already
+    consistent. Returns (n_matches_locked, n_non_match_skipped). Non-match
+    claims are NOT silently locked — the user must explicitly waive them.
+    """
+    tex_files = [p for p in repo_root.rglob("*.tex")
+                 if ".git" not in p.parts and ".paper-verify" not in p.parts]
+    merged = _load_lock(repo_root)
+    skipped = 0
+    locked = 0
+    for tex in tex_files:
+        claims = extract_claims(tex)
+        verify_all(claims, code_root=code_root, log_root=log_root)
+        for c in claims:
+            if c.status == Status.MATCH:
+                merged[c.id] = c.fingerprint()
+                locked += 1
+            else:
+                skipped += 1
+    lp = lock_path(repo_root)
+    lp.parent.mkdir(parents=True, exist_ok=True)
+    lp.write_text(json.dumps(merged, indent=2, sort_keys=True), encoding="utf-8")
+    return locked, skipped

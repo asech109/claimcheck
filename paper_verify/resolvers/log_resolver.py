@@ -37,11 +37,13 @@ _LABEL_ALIASES: dict[str, tuple[str, ...]] = {
 
 
 def _iter_log_files(root: Path):
+    """Yield log files newest-first by mtime so reruns shadow stale runs.
+    Deterministic across runs (sorted), unlike rglob's filesystem order."""
     if not root.exists():
         return
-    for p in root.rglob("*"):
-        if p.is_file() and p.suffix.lower() in _LOG_EXTS:
-            yield p
+    files = [p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in _LOG_EXTS]
+    files.sort(key=lambda p: (-p.stat().st_mtime, str(p)))
+    yield from files
 
 
 def _search_json_obj(obj: Any, keys: tuple[str, ...]) -> Any | None:
@@ -131,15 +133,42 @@ def _scan_csv(path: Path, keys: tuple[str, ...]) -> tuple[Any, int] | None:
         return last_val, last_row_line
 
 
-def resolve_numeric_or_count(claim: Claim, log_root: Path) -> tuple[Any, SourceAnchor] | None:
-    """Search log_root for a key matching claim.label. Returns (value, anchor) or None."""
+def resolve_numeric_or_count(
+    claim: Claim,
+    log_root: Path,
+    on_conflict=None,
+) -> tuple[Any, SourceAnchor] | None:
+    """Search log_root for the first file (mtime-desc) containing claim.label.
+
+    If additional later files (older runs) also contain the key with a
+    DIFFERENT value, call ``on_conflict(claim, primary, others)`` so the
+    caller can surface a warning. The primary (newest) value is still
+    returned — by convention newest run wins."""
     keys = _LABEL_ALIASES.get(claim.label, (claim.label,))
+    primary: tuple[Any, SourceAnchor] | None = None
+    others: list[tuple[Any, SourceAnchor]] = []
     for f in _iter_log_files(log_root):
         if f.suffix.lower() in (".json", ".jsonl"):
             result = _scan_json(f, keys)
         else:
             result = _scan_csv(f, keys)
-        if result is not None:
-            value, line = result
-            return value, SourceAnchor(path=f, line=line)
-    return None
+        if result is None:
+            continue
+        value, line = result
+        anchor = SourceAnchor(path=f, line=line)
+        if primary is None:
+            primary = (value, anchor)
+        else:
+            primary_val = primary[0]
+            if not _values_equivalent(primary_val, value):
+                others.append((value, anchor))
+    if primary is not None and others and on_conflict is not None:
+        on_conflict(claim, primary, others)
+    return primary
+
+
+def _values_equivalent(a: Any, b: Any) -> bool:
+    try:
+        return float(a) == float(b)
+    except (TypeError, ValueError):
+        return a == b

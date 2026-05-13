@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .diff_proposer import propose_all
 from .extractors.tex_extractor import extract_claims
-from .hook import install_hook, run_hook
+from .hook import install_hook, prime_lock, run_hook
 from .models import Status
 from .reporter import render_report
 from .verifier import verify_all
@@ -58,6 +58,13 @@ def cmd_install_hook(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     hook_path = install_hook(repo)
     print(f"installed pre-commit hook: {hook_path}")
+    if args.prime:
+        code = Path(args.code_root or repo).resolve()
+        logs = Path(args.logs or repo).resolve()
+        locked, skipped = prime_lock(repo, code, logs)
+        print(f"primed lock: {locked} matches recorded, {skipped} non-match claims left for review")
+        if skipped:
+            print("  → run `claimcheck scan ...` to see which claims still need a fix or waiver")
     return 0
 
 
@@ -90,6 +97,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     ih = sub.add_parser("install-hook", help="Install a pre-commit hook in a git repo.")
     ih.add_argument("repo", help="Path to a git repository")
+    ih.add_argument("--prime", action="store_true",
+                    help="After install, scan the repo and record current matches in the lock "
+                         "so the hook only flags future drift.")
+    ih.add_argument("--code-root", default=None, help="Used with --prime (default: repo root)")
+    ih.add_argument("--logs", default=None, help="Used with --prime (default: repo root)")
     ih.set_defaults(func=cmd_install_hook)
 
     h = sub.add_parser("hook", help="Run as a git pre-commit hook (internal).")

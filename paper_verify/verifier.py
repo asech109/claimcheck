@@ -28,11 +28,20 @@ def _numbers_match(paper: float, code: float, rel_tol: float = 1e-2) -> bool:
     return False
 
 
+def _counts_match(paper: float, truth: float) -> bool:
+    """Counts MUST be exact integers. No tolerance — '127 vs 128' is a bug,
+    not a rounding issue."""
+    if math.isnan(paper) or math.isnan(truth):
+        return False
+    return int(paper) == int(truth) and float(paper) == float(int(paper))
+
+
 def verify_claim(
     claim: Claim,
     code_root: Path,
     log_root: Path,
     code_fp_cache: tuple | None = None,
+    rel_tol: float = 1e-2,
 ) -> Claim:
     if claim.type in (ClaimType.NUMERIC, ClaimType.COUNT):
         result = resolve_numeric_or_count(claim, log_root)
@@ -47,7 +56,11 @@ def verify_claim(
         claim.truth_value = truth
         claim.truth_anchor = anchor
         if isinstance(truth, (int, float)) and isinstance(claim.parsed_value, (int, float)):
-            if _numbers_match(float(claim.parsed_value), float(truth)):
+            if claim.type == ClaimType.COUNT:
+                ok = _counts_match(float(claim.parsed_value), float(truth))
+            else:
+                ok = _numbers_match(float(claim.parsed_value), float(truth), rel_tol=rel_tol)
+            if ok:
                 claim.status = Status.MATCH
             else:
                 claim.status = Status.MISMATCH
@@ -119,8 +132,13 @@ def verify_claim(
     return claim
 
 
-def verify_all(claims: list[Claim], code_root: Path, log_root: Path) -> list[Claim]:
+def verify_all(
+    claims: list[Claim],
+    code_root: Path,
+    log_root: Path,
+    rel_tol: float = 1e-2,
+) -> list[Claim]:
     code_fp_cache = build_code_fingerprint(code_root)
     for c in claims:
-        verify_claim(c, code_root, log_root, code_fp_cache=code_fp_cache)
+        verify_claim(c, code_root, log_root, code_fp_cache=code_fp_cache, rel_tol=rel_tol)
     return claims

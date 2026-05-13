@@ -55,25 +55,21 @@ _NUMERIC_KEYWORDS = {
 }
 
 # Count keywords + unit nouns -> canonical label.
+# Only PLURAL forms — singular "1 example" is almost always rhetorical
+# ("for example", "consider one example"), not a dataset count claim.
 _COUNT_KEYWORDS = {
-    "transition": "transitions",
     "transitions": "transitions",
-    "episode": "episodes",
     "episodes": "episodes",
-    "step": "steps",
-    "steps": "steps",
-    "trajector": "trajectories",
-    "sample": "samples",
-    "samples": "samples",
-    "example": "examples",
-    "examples": "examples",
-    "environment": "environments",
+    "trajectories": "trajectories",
+    "training samples": "samples",
+    "training examples": "examples",
+    "test samples": "samples",
+    "test examples": "examples",
+    "training instances": "examples",
+    "data points": "samples",
     "environments": "environments",
-    "task": "tasks",
     "tasks": "tasks",
-    "parameter": "parameters",
     "parameters": "parameters",
-    "token": "tokens",
     "tokens": "tokens",
 }
 
