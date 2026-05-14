@@ -23,3 +23,6 @@ env/
 # Local runtime artifacts produced by paper-verify itself
 paper-verify-report.md
 .paper-verify/
+
+# Marketing assets (XHS post images, drafts, prompts) — local only
+marketing/
